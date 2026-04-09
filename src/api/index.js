@@ -3,11 +3,8 @@
 // ==========================================
 
 // 1. 统一配置后端地址
-// 聊天大模型地址 (优先使用环境变量，否则使用阿里云服务器)
-const CHAT_API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://8.130.81.209:8081/api';
-
-// 每日推荐地址 (根据用户提供的局域网 IP)
-const DAILY_API_BASE = 'http://192.168.31.213:3000/api';
+const CHAT_API_BASE = 'http://8.130.81.209:8081/api';
+const DAILY_API_BASE = 'http://8.130.81.209:3000/api';
 
 
 // 2. 导出所有的请求方法

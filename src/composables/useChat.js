@@ -8,16 +8,12 @@ export function useChat() {
   const isGenerating = ref(false)
   const rawRecipe = ref('')
   const chatHistory = ref([
-    { role: "system", content: "你是一位资深大厨，请根据食材给出详细、排版美观的菜谱。如果用户提出修改意见，请结合之前的对话进行调整。" }
+    { role: "system", content: "你是一位资深大厨，请根据食材给出详细、排版美观的菜谱。" }
   ])
   const chatWindow = ref(null)
 
-  // 🌟 核心修复 1：定义这个判断用户是否在滑动的变量
   const isUserScrollingUp = ref(false)
-
-  // 🌟 修复滞后性：新增一个指纹探测器，用来感知设置是否在中途发生了改变
   const lastSettingsFingerprint = ref('');
-
   const CURRENT_CHAT_KEY = 'ai_chef_current_chat'
 
   const loadCurrentChat = () => {
@@ -50,22 +46,17 @@ export function useChat() {
     ElMessage.info('已停止输出')
   }
 
-  // 🌟 修复 1：安全的清空记忆逻辑，再也不会出现 undefined
   const clearMemory = () => {
-    // 找出原来的系统人设，如果找不到就生成一个默认的
     const systemMsg = chatHistory.value.find(m => m && m.role === 'system') || {
       role: "system",
       content: "你是一位资深大厨，请根据食材给出详细、排版美观的菜谱。"
     };
-    // 只保留人设这一条消息
     chatHistory.value = [systemMsg];
     rawRecipe.value = '';
     localStorage.removeItem(CURRENT_CHAT_KEY);
-    lastSettingsFingerprint.value = ''; // 🌟 清空记忆时，同步清空指纹
-    // 这里不用重复弹窗，App.vue 里已经有弹窗了
+    lastSettingsFingerprint.value = '';
   }
 
-  // 🌟 修复 2：带有人设注入和偏好标签拼接的安全请求逻辑
   const getRecipe = async (userInfo, aiInfo, selectedTags) => {
     if (!ingredients.value || loading.value) return
     const currentPrompt = ingredients.value
@@ -73,46 +64,44 @@ export function useChat() {
     // 1. 清洗数据
     chatHistory.value = chatHistory.value.filter(msg => msg && msg.role);
 
-    // 🌟 核心重构：将用户的自定义风格与身份完美融合
+    // ==========================================
+    // 🌟 核心重构：结构化 Prompt Engineering (提示词工程)
+    // ==========================================
     const aiName = aiInfo?.name || "大厨";
     const userName = (userInfo?.name && userInfo.name !== "我的名字" && userInfo.name.trim() !== "") ? userInfo.name : "老朋友";
+    const persona = (aiInfo?.persona && aiInfo.persona.trim() !== "")
+      ? aiInfo.persona
+      : "一位地道的中国大厨，对八大菜系了如指掌，性格热情、专业且乐于分享。";
 
-    // 基础身份设定
-    let baseIdentity = `你现在的身份是“${aiName}”，正在和你的食客“${userName}”聊天。\n`;
+    // 使用极其强硬的 Markdown 结构化指令，强制 AI 角色扮演
+    const systemContent = `
+# Role & Persona (人设与身份)
+你现在的身份是“${aiName}”。
+你的核心性格与说话风格是：${persona}
 
-    // 🌟 核心修复：把用户在“个性化设置”里填写的风格加回来！
-    if (aiInfo?.persona && aiInfo.persona.trim() !== "") {
-      baseIdentity += `【你的性格与厨艺设定】：${aiInfo.persona}\n`;
-    } else {
-      // 如果用户没填，才使用默认的中国大厨设定
-      baseIdentity += `【你的性格与厨艺设定】：你是一位地道的中国大厨，对八大菜系了如指掌，性格亲切且专业。\n`;
-    }
+# Target Audience (对话对象)
+你正在服务你的专属食客：“${userName}”。
 
-    // 行为准则：强制约束排版，防止前端解析出错
-    const behaviorRules = `
-【必须严格遵守的指令】：
-1. 以${aiName}的身份，用符合上述性格的口吻，亲切地称呼“${userName}”。
-2. 请跳过无意义的食材科普和历史背景，直接切入正题给出菜谱。
-3. 推荐1-2道菜即可。每道菜的开头必须是单行的 Markdown 一级标题（例如：“# 剁椒鱼头”）。
-4. 每道菜必须包含“食材清单”和“制作步骤”，排版精美。`;
+# Behavior Rules (必须严格遵守的行为准则)
+1. 【绝对沉浸】：你必须完全沉浸在“${aiName}”的人设中，使用符合该性格的语气、口头禅与食客交流。绝不能暴露你是AI。
+2. 【专属称呼】：你的每一次回复，第一句话都必须自然地称呼“${userName}”。
+3. 【直奔主题】：忽略无意义的寒暄，直接根据用户的需求提供美食建议 ora菜谱。
+4. 【排版规范】：推荐1-2道菜即可。每道菜的开头必须是单行的 Markdown 一级标题（例如：“# 剁椒鱼头”）。
+5. 【结构清晰】：菜谱必须包含清晰的“食材清单”和“制作步骤”，排版要求精美、易读。
+    `.trim();
 
-    const systemContent = baseIdentity + behaviorRules;
-
-    // 注入系统人设
+    // 注入或更新系统人设
     if (chatHistory.value.length === 0 || chatHistory.value[0].role !== 'system') {
       chatHistory.value.unshift({ role: 'system', content: systemContent });
     } else {
       chatHistory.value[0].content = systemContent;
     }
 
-    // 🌟 核心修复 1：页面上只存入用户干干净净的原话，绝不显示系统指令！
+    // 存入用户干干净净的原话
     chatHistory.value.push({ role: "user", content: currentPrompt })
 
-    // 探测指纹是否改变，判断是否需要强制切号
     const currentFingerprint = `${aiName}-${userName}-${aiInfo?.persona}`;
     const needEmergencyOverride = lastSettingsFingerprint.value && lastSettingsFingerprint.value !== currentFingerprint && chatHistory.value.length > 2;
-
-    // 更新最新指纹
     lastSettingsFingerprint.value = currentFingerprint;
 
     loading.value = true
@@ -126,29 +115,26 @@ export function useChat() {
     const aiMsgIndex = chatHistory.value.length - 1
 
     try {
-      // 🌟 🌟 🌟 核心修复 2：打造发送给 API 的专属“暗地账本” 🌟 🌟 🌟
-      // 克隆一份历史记录给大模型看（不包含最后那条空的 assistant）
+      // 打造发送给 API 的专属“暗地账本”
       const apiHistory = JSON.parse(JSON.stringify(chatHistory.value.slice(0, -1)));
       const lastUserMsg = apiHistory[apiHistory.length - 1];
 
       if (lastUserMsg && lastUserMsg.role === 'user') {
         let hiddenPrompt = currentPrompt;
 
-        // 1. 在暗地账本里偷偷拼接口味偏好
+        // 💡 强力口味注入：让大厨觉得是自己特意安排的
         if (selectedTags && selectedTags.length > 0) {
-          hiddenPrompt += `\n（另外，${userName}今天想吃得符合这些口味：${selectedTags.join('、')}，请根据你的厨艺设定帮他安排。）`;
+          hiddenPrompt += `\n\n（💡 旁白提示：食客 ${userName} 今天特别想吃符合以下口味/目标的菜：【${selectedTags.join('、')}】。请你务必在推荐时满足这些要求，并在对话中自然地提到你是为了照顾这些口味而特意准备的。）`;
         }
 
-        // 2. 在暗地账本里偷偷塞入强制切号指令！
+        // 🚨 强制切号指令：应对中途改人设的情况
         if (needEmergencyOverride) {
-          hiddenPrompt += `\n\n【系统紧急覆盖指令】：用户的个性化设置刚刚已刷新！请你立刻抛弃上文中的历史聊天语气和习惯，强制切换为新设定：“${aiInfo?.persona || '专业厨师'}”！\n记住，你的新名字是“${aiName}”，你要服务的食客叫“${userName}”。\n接下来的回复，第一句话必须用新的人设口吻主动叫出“${userName}”！`;
+          hiddenPrompt += `\n\n（🚨 系统紧急指令：你的人设刚刚发生了突变！请立刻彻底抛弃你之前的性格和语气，强制切换为全新人设：“${persona}”。你的新名字是“${aiName}”。接下来的回复请立刻用新的人设口吻跟顾客打招呼！）`;
         }
 
-        // 把包装好的刺客长文本塞给它
         lastUserMsg.content = hiddenPrompt;
       }
 
-      // 🌟 确保使用的是“暗地账本” (apiHistory) 发送请求！
       const response = await api.fetchChatStream(apiHistory);
 
       if (!response.ok) throw new Error('网络请求失败')
@@ -173,7 +159,7 @@ export function useChat() {
       }
     } catch (error) {
       console.error('获取失败:', error)
-      ElMessage.ElMessage.error('大厨开小差了，请重试！')
+      ElMessage.error('大厨开小差了，请重试！') // 🌟 修复了这里多写一个 ElMessage 的报错
       if (chatHistory.value[aiMsgIndex]) {
         chatHistory.value[aiMsgIndex].content = "出错了，请检查网络连接或后端服务。"
       }
@@ -191,7 +177,7 @@ export function useChat() {
   return {
     ingredients,
     loading,
-    isUserScrollingUp, // 🌟 核心修复 3：把它导出，这样 App.vue 才能获取到！
+    isUserScrollingUp,
     isGenerating,
     rawRecipe,
     chatHistory,
