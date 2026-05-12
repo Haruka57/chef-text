@@ -13,388 +13,116 @@
     />
 
     <main class="main-content">
-      <a href="https://github.com/Haruka57/ai-chef-web" target="_blank" class="github-btn">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-        </svg>
-        <span>Github</span>
-      </a>
-
       <div class="mobile-header">
-        <el-icon 
-          class="mobile-menu-btn" 
-          style="font-size: 28px !important; width: 28px !important; height: 28px !important; display: flex; align-items: center;" 
-          @click="showMobileSidebar = true"
-        >
-          <Expand style="width: 100% !important; height: 100% !important;" />
+        <el-icon class="mobile-menu-btn" @click="showMobileSidebar = true">
+          <Expand />
         </el-icon>
-        <h2 class="mobile-title"> AI 智厨</h2>
-        <div style="width: 28px"></div>
+        <h2 class="mobile-title"> AI 营养智厨</h2>
       </div>
 
-      <div 
-        class="chat-window" 
-        ref="chatWindow" 
-        @scroll="handleScroll"
-        @wheel="stopAutoScroll"
-        @touchstart="stopAutoScroll"
-      >
-        <DailyRecipe 
-          v-if="displayHistory.length === 0"
-          @use-recommendation="(name) => { ingredients = name; handleGetRecipe() }"
-        />
-
-        <MessageList 
-          v-else
-          :display-history="displayHistory"
-          :user-info="userInfo"
-          :ai-info="aiInfo"
-          @search-video="searchDouyin"
-          @copy="copyRecipe"
-          @save="handleSaveRecipe"
-          @retry="handleRetry"
-          @submit-edit="handleSubmitEdit"
-        />
-      </div>
-
-      <ChatInput 
-        v-model:ingredients="ingredients"
-        v-model:selectedTags="selectedTags"
-        :isGenerating="isGenerating"
-        @submit="handleGetRecipe"
-        @pause="pauseGeneration"
-      />
+      <!-- 核心仪表盘视图 -->
+      <Dashboard />
+      
     </main>
 
     <CommonDrawer 
       v-model:visible="drawerVisible" 
       title="⭐ 我的私人菜单" 
-      :items="savedRecipes || []" 
-      empty-text="还没有收藏任何菜谱哦~"
+      emptyText="还没有收藏任何菜谱哦~"
       @view="viewFavorite" 
-      @delete="deleteRecipe" 
     />
-
-    <el-dialog
-      v-model="recipeDialogVisible"
-      title="📜 菜谱小纸条"
-      width="90%"
-      style="max-width: 550px; border-radius: 8px; background-color: #fffdf5; border-left: 8px solid #e6a23c;"
-    >
-      <div class="paper-content" v-html="renderPopupMarkdown(currentRecipeContent)"></div>
-      
-      <template #footer>
-        <div style="display: flex; justify-content: flex-end; width: 100%;">
-          <el-button type="danger" plain size="small" @click="handleDeleteFromPopup">
-            <el-icon><Delete /></el-icon> 取消收藏
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
 
     <SettingsDialog 
       v-model:visible="showSettings" 
       v-model:userInfo="userInfo" 
-      v-model:aiInfo="aiInfo" 
       @save="saveSettings" 
     />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue"
-import { ElMessage, ElMessageBox } from "element-plus" // 🌟 引入弹窗组件
-// 🌟 引入咱们打造的超级工具箱
-import { copyToClipboard, extractRecipeTitle as utilExtractRecipeTitle, jumpToDouyinSearch, renderPopupMarkdown } from "./utils/tools"
-
-import DailyRecipe from "./components/DailyRecipe.vue"
-import SettingsDialog from "./components/SettingsDialog.vue"
-import { Expand, Delete } from "@element-plus/icons-vue" // 🌟 引入垃圾桶图标
+import { ref } from "vue"
 import Sidebar from "./components/Sidebar.vue"
-import MessageList from "./components/MessageList.vue"
-import ChatInput from "./components/ChatInput.vue"
+import Dashboard from "./views/Dashboard.vue"
 import CommonDrawer from "./components/CommonDrawer.vue"
+import SettingsDialog from "./components/SettingsDialog.vue"
+import { Expand } from "@element-plus/icons-vue"
 import { useHistory } from "./composables/useHistory"
-import { useChat } from "./composables/useChat"
+import { useUserStore } from "./stores/userStore"
+import { useRecipeStore } from "./stores/recipeStore"
+import { ElMessage } from "element-plus"
 
 const { 
-  savedRecipes, 
   browsingHistory, 
-  saveRecipe, 
-  deleteRecipe, 
   deleteHistory 
-} = useHistory();
+} = useHistory()
 
-const {
-  ingredients,
-  isGenerating,
-  rawRecipe,
-  chatHistory,
-  chatWindow,
-  isUserScrollingUp,
-  pauseGeneration,
-  clearMemory: clearChatMemory,
-  getRecipe
-} = useChat();
+const userStore = useUserStore()
+const recipeStore = useRecipeStore()
+const isCollapsed = ref(false)
+const showMobileSidebar = ref(false)
+const drawerVisible = ref(false)
+const showSettings = ref(false)
 
 const userInfo = ref({
-  name: "我的名字",
-  avatar: "🧑"
-});
-
-const aiInfo = ref({
-  name: "大厨", 
-  avatar: "👨‍🍳",
-  persona: "你是一位有着30年经验的中餐大厨，说话风趣幽默，做事干净利索。你最擅长用最普通的食材做出最地道的中国味。"
-});
-
-const selectedTags = ref([]);
-const drawerVisible = ref(false);
-const isCollapsed = ref(false);
-const showMobileSidebar = ref(false);
-
-// 🌟 核心标识：判断当前是在老对话里继续聊，还是开启了一个全新场景
-const isNewConversation = ref(true);
-
-onMounted(() => {
-  const savedUserInfo = localStorage.getItem("chefUserInfo");
-  if (savedUserInfo) userInfo.value = JSON.parse(savedUserInfo);
-
-  const savedAiInfo = localStorage.getItem("chefAiInfo");
-  if (savedAiInfo) aiInfo.value = JSON.parse(savedAiInfo);
+  name: userStore.name,
+  avatar: userStore.avatar
 })
 
-// 1. 开启新对话
 const startNewChat = () => {
-  if (isGenerating.value) return;
-  
-  // 1. 开启新对话 (双重清理，绝对干净)
-  chatHistory.value = [];
-  rawRecipe.value = "";
-  ingredients.value = "";
-  clearChatMemory();
-  isNewConversation.value = true; // 🌟 标志位：准备开启全新对话！
-  ElMessage.success('已开启新对话');
-};
-
-// 2. 重置历史记录 (带二次确认 + 保护收藏夹)
-const clearMemory = () => {
-  ElMessageBox.confirm(
-    '您确定要删除全部的历史记录吗？此操作不可撤销，但您的“收藏夹”内容将会保留。',
-    '重置确认',
-    {
-      confirmButtonText: '确定删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-      buttonSize: 'default',
-      center: true // 文字居中显示，更有仪式感
-    }
-  ).then(() => {
-    // 用户点击确定
-    chatHistory.value = [];
-    browsingHistory.value = [];
-    clearChatMemory(); // 调用 useChat 中的清理
-    
-    // 🌟 强力大扫除：彻底拔除本地存储中的缓存
-    localStorage.removeItem('chef_browsing_history');
-    localStorage.removeItem('ai_chef_current_chat');
-    isNewConversation.value = true; // 回到全新状态
-    
-    ElMessage.success('历史记录已清空！');
-  }).catch(() => {
-    // 用户点击取消，不做任何操作
-  });
-};
-
-// 3. 打开记录 (直接在主界面显示)
-const viewDetail = (item) => {
-  if (item.messages) {
-    chatHistory.value = JSON.parse(JSON.stringify(item.messages));
-  } else {
-    // 兼容收藏夹那种只有 content 的情况
-    const content = item.content || item.prompt;
-    chatHistory.value = [{ role: 'assistant', content: content }];
-  }
-  drawerVisible.value = false;
-  isNewConversation.value = false; // 🌟 标志位：这已经是旧对话了，接着聊！
-  
-  // 🌟 新增：如果是手机端，点击后自动收起左侧边栏，体验更丝滑
-  showMobileSidebar.value = false; 
-  
-  // 🌟 小细节：把你点开的这个旧对话，置顶到历史列表的最上面
-  const index = browsingHistory.value.findIndex(h => h.time === item.time && h.prompt === item.prompt);
-  if(index > 0) {
-    const targetItem = browsingHistory.value.splice(index, 1)[0];
-    browsingHistory.value.unshift(targetItem);
-  }
-  ElMessage.success('已回到该对话场景');
-};
-
-// 4. 计算属性防撞墙
-const displayHistory = computed(() => {
-  if (!chatHistory.value || !Array.isArray(chatHistory.value)) return [];
-  return chatHistory.value.filter(msg => msg && msg.role && msg.role !== "system");
-});
-
-const showSettings = ref(false);
+    ElMessage.info('请点击“问问 AI 大厨”开始咨询')
+}
 
 const saveSettings = () => {
-  localStorage.setItem("chefUserInfo", JSON.stringify(userInfo.value));
-  localStorage.setItem("chefAiInfo", JSON.stringify(aiInfo.value));
-  showSettings.value = false;
-  ElMessage.success("设置已保存");
-};
+  userStore.updateProfile(userInfo.value.name, userInfo.value.avatar)
+  showSettings.value = false
+  ElMessage.success("账户设置已保存")
+}
 
-// 🌟 强力打断逻辑：只要用户滑动滚轮或摸屏幕，立刻停止自动滚动
-const stopAutoScroll = () => {
-  if (isGenerating.value) {
-    isUserScrollingUp.value = true;
-  }
-};
+const viewDetail = (item) => {
+    // 历史查看逻辑
+}
 
-// 🌟 优化后的滚动检测
-const handleScroll = (e) => {
-  if (!e.target) return;
-  const { clientHeight, scrollHeight, scrollTop } = e.target;
-  // 只要距离底部超过 50 像素，就判定为用户正在往上回看历史
-  isUserScrollingUp.value = (clientHeight + scrollTop < scrollHeight - 50);
-};
-
-// 🌟 核心修复：先从 AI 回复中提取菜名，再去抖音搜索！
-const searchDouyin = (content) => {
-  // 1. 找到该对话中用户最后说的话作为兜底
-  const lastUserMsg = chatHistory.value.slice().reverse().find(m => m.role === 'user')?.content || '美食';
-  
-  // 2. 调用工具箱里的提取器，把“番茄炖牛腩”给抠出来
-  const realTitle = utilExtractRecipeTitle(content, lastUserMsg);
-  
-  // 3. 带着真正的菜名去搜索！
-  jumpToDouyinSearch(realTitle);
-};
-
-// 🌟 核心修复：正确提取菜名存入收藏夹，不再存用户的废话！
-const handleSaveRecipe = (content) => {
-  // 1. 找到用户的原始提问作为兜底
-  const lastUserMsg = chatHistory.value.slice().reverse().find(m => m.role === 'user')?.content || '美味菜谱';
-  
-  // 2. 🌟 调用强大的标题提取器，从 AI 返回的 Markdown 中精准抓取真正的菜名（如“番茄炖牛腩”）！
-  const realTitle = utilExtractRecipeTitle(content, lastUserMsg);
-  
-  // 3. 将真正的菜名保存进收藏夹
-  saveRecipe(content, realTitle);
-  
-  ElMessage.success('已加入私人菜单！');
-};
-
-// 🌟 工具箱一键接管：复制菜谱
-const copyRecipe = (content) => copyToClipboard(content || rawRecipe.value);
-
-const handleGetRecipe = async () => {
-  const originalUserText = ingredients.value; // 保存原本的食材名字
-  
-  // 🌟 等待大厨生成完菜谱
-  await getRecipe(userInfo.value, aiInfo.value, selectedTags.value);
-  
-  // 🌟 生成完毕后，提取名字并存入左侧历史记录
-  const lastAiMsg = chatHistory.value[chatHistory.value.length - 1];
-  if (lastAiMsg && lastAiMsg.role === 'assistant' && !lastAiMsg.content.includes('出错了')) {
-    const title = utilExtractRecipeTitle(lastAiMsg.content, originalUserText);
-    
-    // 🌟 核心逻辑分流：是新对话，还是在老对话里追加？
-    if (isNewConversation.value) {
-      // 首次发消息，新建一个历史记录卡片
-      browsingHistory.value.unshift({
-        prompt: title,
-        content: lastAiMsg.content,
-        messages: JSON.parse(JSON.stringify(chatHistory.value)), 
-        time: new Date().toLocaleTimeString()
-      });
-      isNewConversation.value = false; // 第一次聊完，这个对话就变成“老对话”了
-    } else {
-      // 正在老对话中追问，不新建卡片，只更新最上面那个卡片的内置记录！
-      if (browsingHistory.value.length > 0) {
-        browsingHistory.value[0].messages = JSON.parse(JSON.stringify(chatHistory.value));
-        // 同时同步最新的回复内容，方便在侧边栏显示最新的预览（如果有需要）
-        browsingHistory.value[0].content = lastAiMsg.content;
-      }
-    }
-    
-    // 🌟 核心修复：确保每次聊天更新后，都稳稳地存入本地硬盘，绝不失忆！
-    localStorage.setItem('chef_browsing_history', JSON.stringify(browsingHistory.value));
-  }
-};
-
-// 🌟 升级版：真·一键重新生成（无需用户再点发送）
-const handleRetry = () => {
-  const len = chatHistory.value.length;
-  if (len >= 2) {
-    // 1. 拿到用户刚才的话
-    const prevUserContent = chatHistory.value[len - 2].content;
-    
-    // 2. 删掉失败的 AI 回复和用户的提问
-    chatHistory.value.pop();
-    chatHistory.value.pop();
-    
-    // 3. 把字塞回输入框
-    ingredients.value = prevUserContent;
-    
-    // 4. 重点：加一个微小的延迟，确保 Vue 更新了输入框后，自动帮你按下“发送”按钮！
-    setTimeout(() => {
-      handleGetRecipe();
-    }, 100);
-  }
-};
-
-// 🌟 终极版：处理内联编辑提交（真正的时光倒流）
-const handleSubmitEdit = ({ originalContent, newContent }) => {
-  if (isGenerating.value) {
-    ElMessage.warning('请等待大厨回复完毕再修改哦！');
-    return;
-  }
-  
-  // 1. 找到用户原来那句话在历史记录里的位置
-  const realIndex = chatHistory.value.findIndex(m => m && m.role === 'user' && m.content === originalContent);
-  
-  if (realIndex !== -1) {
-    // 2. 砍掉这句话，以及它后面的所有聊天记录（时光倒流到这句话之前）
-    chatHistory.value = chatHistory.value.slice(0, realIndex);
-    
-    // 3. 把用户新改的字赋值给底层变量
-    ingredients.value = newContent;
-    
-    // 4. 短暂延迟后自动触发生成（看起来就像是从这个位置重新发送了一样）
-    setTimeout(() => {
-      handleGetRecipe();
-    }, 50);
-  } else {
-    ElMessage.warning('找不到该条记录，请直接在底部输入');
-  }
-};
-
-// ==================== 🌟 收藏小纸条专区 ====================
-const recipeDialogVisible = ref(false);
-const currentRecipeContent = ref('');
-
-// 点击收藏夹里的菜谱时触发
 const viewFavorite = (item) => {
-  currentRecipeContent.value = item.content || item.prompt;
-  recipeDialogVisible.value = true;
-  drawerVisible.value = false; // 关闭侧边栏
-};
+    // 收藏查看逻辑
+}
 
-// 🌟 在小纸条里直接取消收藏
-const handleDeleteFromPopup = () => {
-  // 1. 在收藏夹数组里，精准定位当前这张纸条的索引
-  const index = savedRecipes.value.findIndex(item => (item.content || item.prompt) === currentRecipeContent.value);
-  
-  if (index !== -1) {
-    // 2. 调用底层的方法删掉它
-    deleteRecipe(index); 
-    // 3. 优雅地关掉小纸条
-    recipeDialogVisible.value = false; 
-    ElMessage.success('已取消收藏');
-  }
-};
+const clearMemory = () => {
+    // 清理逻辑
+}
 </script>
 
-<style src="./assets/css/AppStyle.css"></style>
+<style>
+@import "./style.css";
+@import "./assets/css/AppStyle.css";
+
+.chef-layout {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background-color: #f5f7fa;
+}
+
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-header {
+  display: none;
+  padding: 12px 20px;
+  background: #fff;
+  border-bottom: 1px solid #ebeef5;
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .mobile-header {
+    display: flex;
+  }
+}
+</style>

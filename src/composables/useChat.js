@@ -1,6 +1,7 @@
 ﻿import { ref, onMounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { api } from '../api/index' // 🌟 引入 api
+import { api } from '../api/index'
+import { useHealthStore } from '../stores/healthStore'
 
 export function useChat() {
   const ingredients = ref('')
@@ -8,12 +9,13 @@ export function useChat() {
   const isGenerating = ref(false)
   const rawRecipe = ref('')
   const chatHistory = ref([
-    { role: "system", content: "你是一位资深大厨，请根据食材给出详细、排版美观的菜谱。" }
+    { role: "system", content: "你是一位资深大厨且懂营养学，请根据食材和健康目标给出建议。" }
   ])
   const chatWindow = ref(null)
 
+  const healthStore = useHealthStore()
   const isUserScrollingUp = ref(false)
-  const lastSettingsFingerprint = ref('');
+  const lastSettingsFingerprint = ref('')
   const CURRENT_CHAT_KEY = 'ai_chef_current_chat'
 
   const loadCurrentChat = () => {
@@ -34,7 +36,6 @@ export function useChat() {
 
   const scrollToBottom = async () => {
     await nextTick()
-    // 🌟 核心修复 2：只有当用户【没有】往上滑的时候，才自动滚动到底部！
     if (chatWindow.value && !isUserScrollingUp.value) {
       chatWindow.value.scrollTop = chatWindow.value.scrollHeight
     }
@@ -49,7 +50,7 @@ export function useChat() {
   const clearMemory = () => {
     const systemMsg = chatHistory.value.find(m => m && m.role === 'system') || {
       role: "system",
-      content: "你是一位资深大厨，请根据食材给出详细、排版美观的菜谱。"
+      content: "你是一位资深大厨且懂营养学，请根据食材和健康目标给出建议。"
     };
     chatHistory.value = [systemMsg];
     rawRecipe.value = '';
@@ -57,52 +58,55 @@ export function useChat() {
     lastSettingsFingerprint.value = '';
   }
 
-  const getRecipe = async (userInfo, aiInfo, selectedTags) => {
+  const getRecipe = async (userInfo, aiInfo, selectedTags, passedHealthStore = null) => {
     if (!ingredients.value || loading.value) return
     const currentPrompt = ingredients.value
 
-    // 1. 清洗数据
+    // 优先使用传入的 store，否则使用闭包内的
+    const activeHealthStore = passedHealthStore || healthStore
+
     chatHistory.value = chatHistory.value.filter(msg => msg && msg.role);
 
-    // ==========================================
-    // 🌟 核心重构：结构化 Prompt Engineering (提示词工程)
-    // ==========================================
-    const aiName = aiInfo?.name || "大厨";
+    const aiName = aiInfo?.name || "AI 营养大厨";
     const userName = (userInfo?.name && userInfo.name !== "我的名字" && userInfo.name.trim() !== "") ? userInfo.name : "老朋友";
     const persona = (aiInfo?.persona && aiInfo.persona.trim() !== "")
       ? aiInfo.persona
-      : "一位地道的中国大厨，对八大菜系了如指掌，性格热情、专业且乐于分享。";
+      : "一位精通临床营养学与中西烹饪的大厨，性格热心、严谨，擅长平衡美味与健康。";
 
-    // 使用极其强硬的 Markdown 结构化指令，强制 AI 角色扮演
-    const systemContent = `
-# Role & Persona (人设与身份)
-你现在的身份是“${aiName}”。
-你的核心性格与说话风格是：${persona}
-
-# Target Audience (对话对象)
-你正在服务你的专属食客：“${userName}”。
-
-# Behavior Rules (必须严格遵守的行为准则)
-1. 【绝对沉浸】：你必须完全沉浸在“${aiName}”的人设中，使用符合该性格的语气、口头禅与食客交流。绝不能暴露你是AI。
-2. 【专属称呼】：你的每一次回复，第一句话都必须自然地称呼“${userName}”。
-3. 【直奔主题】：忽略无意义的寒暄，直接根据用户的需求提供美食建议 ora菜谱。
-4. 【排版规范】：推荐1-2道菜即可。每道菜的开头必须是单行的 Markdown 一级标题（例如：“# 剁椒鱼头”）。
-5. 【结构清晰】：菜谱必须包含清晰的“食材清单”和“制作步骤”，排版要求精美、易读。
+    // 构建动态健康背景
+    const healthContext = `
+# 用户的健康档案 (核心参考数据)
+- 当前体重: ${activeHealthStore.weight}kg
+- 目标体重: ${activeHealthStore.targetWeight}kg
+- 目标类型: ${activeHealthStore.goalType === 'lose' ? '减脂/减重' : activeHealthStore.goalType === 'gain' ? '增肌/增重' : '维持健康'}
+- 建议每日摄入: ${activeHealthStore.recommendedIntake} kcal
+- TDEE: ${activeHealthStore.tdee} kcal
+- 个人偏好: ${activeHealthStore.dietaryPreferences || '无特殊偏好'}
     `.trim();
 
-    // 注入或更新系统人设
+    const systemContent = `
+# Role & Persona
+你现在的身份是“${aiName}”。你的核心人设是：${persona}
+
+${healthContext}
+
+# 对话目标
+你正在为食客“${userName}”提供专属营养方案。
+
+# 行为限制
+1. 每次回复开头必须亲切地称呼“${userName}”。
+2. 给出菜谱或建议时，必须结合其实阶健康参数（如“考虑到你正处于减脂期...”或“这道菜的热量约为...符合你每日${activeHealthStore.recommendedIntake}大卡的要求”）。
+3. 菜法名称使用一级标题 #。
+4. 必须包含“营养点评”板块。
+    `.trim();
+
     if (chatHistory.value.length === 0 || chatHistory.value[0].role !== 'system') {
       chatHistory.value.unshift({ role: 'system', content: systemContent });
     } else {
       chatHistory.value[0].content = systemContent;
     }
 
-    // 存入用户干干净净的原话
     chatHistory.value.push({ role: "user", content: currentPrompt })
-
-    const currentFingerprint = `${aiName}-${userName}-${aiInfo?.persona}`;
-    const needEmergencyOverride = lastSettingsFingerprint.value && lastSettingsFingerprint.value !== currentFingerprint && chatHistory.value.length > 2;
-    lastSettingsFingerprint.value = currentFingerprint;
 
     loading.value = true
     isGenerating.value = true
@@ -110,32 +114,26 @@ export function useChat() {
     isUserScrollingUp.value = false
     ingredients.value = ''
 
-    // 预留 AI 的气泡
     chatHistory.value.push({ role: "assistant", content: "" })
     const aiMsgIndex = chatHistory.value.length - 1
 
     try {
-      // 打造发送给 API 的专属“暗地账本”
       const apiHistory = JSON.parse(JSON.stringify(chatHistory.value.slice(0, -1)));
-      const lastUserMsg = apiHistory[apiHistory.length - 1];
-
-      if (lastUserMsg && lastUserMsg.role === 'user') {
-        let hiddenPrompt = currentPrompt;
-
-        // 💡 强力口味注入：让大厨觉得是自己特意安排的
-        if (selectedTags && selectedTags.length > 0) {
-          hiddenPrompt += `\n\n（💡 旁白提示：食客 ${userName} 今天特别想吃符合以下口味/目标的菜：【${selectedTags.join('、')}】。请你务必在推荐时满足这些要求，并在对话中自然地提到你是为了照顾这些口味而特意准备的。）`;
+      
+      // 构建 payload，包含健康数据供后端使用（如果需要）
+      const payload = {
+        messages: apiHistory,
+        health: {
+          weight: activeHealthStore.weight,
+          targetWeight: activeHealthStore.targetWeight,
+          goalType: activeHealthStore.goalType,
+          recommendedIntake: activeHealthStore.recommendedIntake,
+          tdee: activeHealthStore.tdee,
+          dietaryPreferences: activeHealthStore.dietaryPreferences
         }
+      };
 
-        // 🚨 强制切号指令：应对中途改人设的情况
-        if (needEmergencyOverride) {
-          hiddenPrompt += `\n\n（🚨 系统紧急指令：你的人设刚刚发生了突变！请立刻彻底抛弃你之前的性格和语气，强制切换为全新人设：“${persona}”。你的新名字是“${aiName}”。接下来的回复请立刻用新的人设口吻跟顾客打招呼！）`;
-        }
-
-        lastUserMsg.content = hiddenPrompt;
-      }
-
-      const response = await api.fetchChatStream(apiHistory);
+      const response = await api.fetchChatStream(payload);
 
       if (!response.ok) throw new Error('网络请求失败')
 
@@ -153,20 +151,12 @@ export function useChat() {
         rawRecipe.value = currentReply
         scrollToBottom()
       }
-
-      if (!isGenerating.value) {
-        chatHistory.value[aiMsgIndex].content += " ...[已停止]"
-      }
     } catch (error) {
       console.error('获取失败:', error)
-      ElMessage.error('大厨开小差了，请重试！') // 🌟 修复了这里多写一个 ElMessage 的报错
-      if (chatHistory.value[aiMsgIndex]) {
-        chatHistory.value[aiMsgIndex].content = "出错了，请检查网络连接或后端服务。"
-      }
+      ElMessage.error('服务连接异常')
     } finally {
       loading.value = false
       isGenerating.value = false
-      rawRecipe.value = ''
     }
   }
 

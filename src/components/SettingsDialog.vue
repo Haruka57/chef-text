@@ -53,6 +53,44 @@
           <el-input v-model="aiInfo.persona" type="textarea" :rows="3" placeholder="例如：你是一位性格火辣的川菜大师，说话干脆利落..." />
         </div>
       </div>
+
+      <el-divider />
+
+      <div class="setting-section">
+        <div class="section-label">🏥 健康档案（私人营养师专用）</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
+          <el-select v-model="healthProfile.gender" placeholder="性别">
+            <el-option label="男" value="male" />
+            <el-option label="女" value="female" />
+          </el-select>
+          <el-input v-model.number="healthProfile.age" type="number" placeholder="年龄">
+            <template #prepend>年龄</template>
+          </el-input>
+          <el-input v-model.number="healthProfile.height" type="number" placeholder="身高(cm)">
+            <template #prepend>身高</template>
+          </el-input>
+          <el-input v-model.number="healthProfile.weight" type="number" placeholder="当前体重(kg)">
+            <template #prepend>当前体重</template>
+          </el-input>
+          <el-input v-model.number="healthProfile.targetWeight" type="number" placeholder="目标体重(kg)">
+            <template #prepend>目标体重</template>
+          </el-input>
+          <el-select v-model="healthProfile.activityLevel" placeholder="活动强度">
+            <el-option label="久坐（几乎不运动）" value="sedentary" />
+            <el-option label="轻度活动（每周1-3天）" value="light" />
+            <el-option label="中度活动（每周3-5天）" value="moderate" />
+            <el-option label="活跃（每周6-7天）" value="active" />
+            <el-option label="非常活跃（重体力劳动）" value="very" />
+          </el-select>
+        </div>
+        <el-input 
+          v-model="healthProfile.dietaryPreferences" 
+          type="textarea" 
+          :rows="2" 
+          placeholder="饮食偏好/禁忌（如：不吃辣、过敏花生、低碳水...）" 
+          style="margin-top: 12px;"
+        />
+      </div>
     </div>
     <template #footer>
       <span class="dialog-footer">
@@ -83,6 +121,7 @@ import { VueCropper } from 'vue-cropper'
 const visible = defineModel('visible', { type: Boolean, default: false })
 const userInfo = defineModel('userInfo', { type: Object })
 const aiInfo = defineModel('aiInfo', { type: Object })
+const healthProfile = defineModel('healthProfile', { type: Object, default: () => ({}) });
 
 // 定义向父组件发射的保存事件
 const emit = defineEmits(['save'])
