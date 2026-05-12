@@ -1,7 +1,7 @@
 ﻿import { ref, onMounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api/index'
-import { useHealthStore } from '../stores/healthStore'
+import { useHealthStore } from '../stores/healthStore' // ?? 引入健康 Store
 
 export function useChat() {
   const ingredients = ref('')
@@ -13,9 +13,9 @@ export function useChat() {
   ])
   const chatWindow = ref(null)
 
-  const healthStore = useHealthStore()
+  const healthStore = useHealthStore() // 实例化
   const isUserScrollingUp = ref(false)
-  const lastSettingsFingerprint = ref('')
+  const lastSettingsFingerprint = ref('');
   const CURRENT_CHAT_KEY = 'ai_chef_current_chat'
 
   const loadCurrentChat = () => {
@@ -58,12 +58,9 @@ export function useChat() {
     lastSettingsFingerprint.value = '';
   }
 
-  const getRecipe = async (userInfo, aiInfo, selectedTags, passedHealthStore = null) => {
+  const getRecipe = async (userInfo, aiInfo, selectedTags) => {
     if (!ingredients.value || loading.value) return
     const currentPrompt = ingredients.value
-
-    // 优先使用传入的 store，否则使用闭包内的
-    const activeHealthStore = passedHealthStore || healthStore
 
     chatHistory.value = chatHistory.value.filter(msg => msg && msg.role);
 
@@ -76,12 +73,12 @@ export function useChat() {
     // 构建动态健康背景
     const healthContext = `
 # 用户的健康档案 (核心参考数据)
-- 当前体重: ${activeHealthStore.weight}kg
-- 目标体重: ${activeHealthStore.targetWeight}kg
-- 目标类型: ${activeHealthStore.goalType === 'lose' ? '减脂/减重' : activeHealthStore.goalType === 'gain' ? '增肌/增重' : '维持健康'}
-- 建议每日摄入: ${activeHealthStore.recommendedIntake} kcal
-- TDEE: ${activeHealthStore.tdee} kcal
-- 个人偏好: ${activeHealthStore.dietaryPreferences || '无特殊偏好'}
+- 当前体重: ${healthStore.weight}kg
+- 目标体重: ${healthStore.targetWeight}kg
+- 目标类型: ${healthStore.goalType === 'lose' ? '减脂/减重' : healthStore.goalType === 'gain' ? '增肌/增重' : '维持健康'}
+- 建议每日摄入: ${healthStore.recommendedIntake} kcal
+- TDEE: ${healthStore.tdee} kcal
+- 个人偏好: ${healthStore.dietaryPreferences || '无特殊偏好'}
     `.trim();
 
     const systemContent = `
@@ -95,7 +92,7 @@ ${healthContext}
 
 # 行为限制
 1. 每次回复开头必须亲切地称呼“${userName}”。
-2. 给出菜谱或建议时，必须结合其实阶健康参数（如“考虑到你正处于减脂期...”或“这道菜的热量约为...符合你每日${activeHealthStore.recommendedIntake}大卡的要求”）。
+2. 给出菜谱或建议时，必须结合其实阶健康参数（如“考虑到你正处于减脂期...”或“这道菜的热量约为...符合你每日${healthStore.recommendedIntake}大卡的要求”）。
 3. 菜法名称使用一级标题 #。
 4. 必须包含“营养点评”板块。
     `.trim();
@@ -119,21 +116,7 @@ ${healthContext}
 
     try {
       const apiHistory = JSON.parse(JSON.stringify(chatHistory.value.slice(0, -1)));
-      
-      // 构建 payload，包含健康数据供后端使用（如果需要）
-      const payload = {
-        messages: apiHistory,
-        health: {
-          weight: activeHealthStore.weight,
-          targetWeight: activeHealthStore.targetWeight,
-          goalType: activeHealthStore.goalType,
-          recommendedIntake: activeHealthStore.recommendedIntake,
-          tdee: activeHealthStore.tdee,
-          dietaryPreferences: activeHealthStore.dietaryPreferences
-        }
-      };
-
-      const response = await api.fetchChatStream(payload);
+      const response = await api.fetchChatStream(apiHistory);
 
       if (!response.ok) throw new Error('网络请求失败')
 

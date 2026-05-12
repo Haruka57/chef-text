@@ -23,6 +23,13 @@
       </el-col>
     </el-row>
 
+    <!-- 今日热量记账卡片 -->
+    <el-row :gutter="24" style="margin-top: 24px;">
+      <el-col :span="24">
+        <FoodTrackerCard />
+      </el-col>
+    </el-row>
+
     <!-- 其他模块（可后续扩展） -->
     <el-row :gutter="24" style="margin-top: 24px;">
       <el-col :span="24">
@@ -51,6 +58,7 @@ import { useUserStore } from '../stores/userStore'
 import { useHealthStore } from '../stores/healthStore'
 import HealthInputCard from '../components/HealthInputCard.vue'
 import CalorieGoalCard from '../components/CalorieGoalCard.vue'
+import FoodTrackerCard from '../components/FoodTrackerCard.vue'   // 新增
 import AICopilotDrawer from '../components/AICopilotDrawer.vue'
 import { ChatDotRound } from '@element-plus/icons-vue'
 
